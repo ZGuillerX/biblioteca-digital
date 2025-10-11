@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # Servicio MySQL
+  mysql:
+    image: mysql:8.0
+    container_name: biblioteca_mysql
+    restart: always
+    env_file:
+      - .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - biblioteca_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Servicio Backend (FastAPI)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: biblioteca_backend
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - biblioteca_network
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Servicio Frontend (React) - Opcional para después
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   container_name: biblioteca_frontend
+  #   restart: always
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - ./frontend/src:/app/src
+  #   networks:
+  #     - biblioteca_network
+  #   depends_on:
+  #     - backend
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  biblioteca_network:
+    driver: bridge
