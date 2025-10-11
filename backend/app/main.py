@@ -7,12 +7,13 @@ Punto de entrada de la aplicación. Configura FastAPI, middlewares y rutas.
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordBearer
 import logging
 import time
 from config import settings
 from database import DatabaseConnection, test_connection
 
-# Importacion de rutas
+# Importación de rutas
 from routes import auth, books, loans
 
 # Configurar logging
@@ -27,9 +28,55 @@ app = FastAPI(
     title=settings.APP_NAME,
     description="API REST para sistema de gestión de biblioteca digital",
     version=settings.APP_VERSION,
-    docs_url="/docs",  # Swagger UI
-    redoc_url="/redoc"  # ReDoc
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_tags=[
+        {"name": "Autenticación", "description": "Registro, login y perfil"},
+        {"name": "Libros", "description": "CRUD de libros"},
+        {"name": "Préstamos", "description": "Gestión de préstamos de libros"},
+    ]
 )
+
+
+# ==================== AUTENTICACIÓN PARA SWAGGER ====================
+
+from fastapi.openapi.utils import get_openapi
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+def custom_openapi():
+    """
+    Personaliza la documentación OpenAPI para incluir autenticación Bearer (JWT)
+    y habilitar el botón 'Authorize' en Swagger UI.
+    """
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    openapi_schema = get_openapi(
+        title=settings.APP_NAME,
+        version=settings.APP_VERSION,
+        description="API REST para sistema de gestión de biblioteca digital",
+        routes=app.routes,
+    )
+
+    openapi_schema["components"]["securitySchemes"] = {
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT"
+        }
+    }
+
+    # Aplica seguridad global a las rutas (puedes quitar esto si quieres que algunas queden abiertas)
+    for path in openapi_schema["paths"].values():
+        for method in path.values():
+            if "security" not in method:
+                method["security"] = [{"BearerAuth": []}]
+
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 
 # ==================== MIDDLEWARES ====================
