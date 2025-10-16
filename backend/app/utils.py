@@ -1,100 +1,69 @@
-"""
-Utilidades
-==========
-Funciones auxiliares y utilidades generales.
-"""
-
+import json
 from datetime import datetime
-from typing import Optional
-import re
+from typing import Optional, Any, Dict
+from fastapi.responses import JSONResponse
+import re as regex
 
 
+# Serializador por defecto para datetime y otros tipos no serializables
+def default_serializer(obj):
+    if isinstance(obj, datetime):
+        return obj.isoformat()  # convierte datetime a string ISO 8601
+    raise TypeError(f"Type {type(obj)} not serializable")
+
+
+# Crea una respuesta JSON uniforme para todos los endpoints.
+def create_response(
+    status_code: int,
+    message: str,
+    data: Any = None,
+    detail: Optional[str] = None
+) -> JSONResponse:
+    
+    content: Dict[str, Any] = {"message": message}
+    
+    if data is not None:
+        # Serializa data para convertir datetime a string y otros tipos no serializables
+        data_json = json.loads(json.dumps(data, default=default_serializer))
+        content["data"] = data_json
+    
+    if detail is not None:
+        content["detail"] = detail
+    
+    return JSONResponse(
+    status_code=status_code, 
+    content=content,
+    media_type="application/json; charset=utf-8"
+)
+
+
+
+# Valida formato de ISBN (10 o 13 dígitos). 
 def validate_isbn(isbn: str) -> bool:
-    """
-    Valida formato de ISBN (10 o 13 dígitos).
-    
-    Args:
-        isbn (str): ISBN a validar
-        
-    Returns:
-        bool: True si es válido, False si no
-        
-    Example:
-        >>> validate_isbn("978-3-16-148410-0")
-        True
-    """
-    # Remover guiones y espacios
     isbn_clean = isbn.replace('-', '').replace(' ', '')
-    
-    # Verificar que solo contenga dígitos y tenga longitud correcta
     if not isbn_clean.isdigit():
         return False
-    
     return len(isbn_clean) in [10, 13]
 
-
+# Formatea una fecha a string.
 def format_date(date: Optional[datetime], format_str: str = "%Y-%m-%d %H:%M:%S") -> Optional[str]:
-    """
-    Formatea una fecha a string.
-    
-    Args:
-        date (datetime): Fecha a formatear
-        format_str (str): Formato de salida
-        
-    Returns:
-        str | None: Fecha formateada o None
-    """
     if date is None:
         return None
-    
     return date.strftime(format_str)
 
-
+# Limpia y sanitiza un string.
 def sanitize_string(text: str, max_length: int = 255) -> str:
-    """
-    Limpia y sanitiza un string.
-    
-    Args:
-        text (str): Texto a limpiar
-        max_length (int): Longitud máxima
-        
-    Returns:
-        str: Texto sanitizado
-    """
-    # Remover espacios extras
     text = ' '.join(text.split())
-    
-    # Truncar si es muy largo
     if len(text) > max_length:
         text = text[:max_length]
-    
     return text.strip()
 
-
+# Valida formato de email.
 def validate_email(email: str) -> bool:
-    """
-    Valida formato de email.
-    
-    Args:
-        email (str): Email a validar
-        
-    Returns:
-        bool: True si es válido, False si no
-    """
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return re.match(pattern, email) is not None
+    return regex.match(pattern, email) is not None
 
-
+# Calcula diferencia en días entre dos fechas.
 def calculate_days_difference(date1: datetime, date2: datetime) -> int:
-    """
-    Calcula diferencia en días entre dos fechas.
-    
-    Args:
-        date1 (datetime): Primera fecha
-        date2 (datetime): Segunda fecha
-        
-    Returns:
-        int: Diferencia en días
-    """
     delta = date2 - date1
     return delta.days

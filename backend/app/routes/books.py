@@ -2,17 +2,17 @@
 Rutas de Libros
 ===============
 Endpoints para gestión del catálogo de libros.
-
 """
 
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter,status, Depends, Query
 from typing import List, Optional
 import logging
 
 from models import BookCreate, BookUpdate, BookResponse, MessageResponse
 from database import execute_query
-from routes.auth import get_current_user, require_admin
+from routes.auth import require_admin
 from mysql.connector import Error
+from utils import create_response
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -23,25 +23,19 @@ router = APIRouter()
 
 # ==================== ENDPOINTS PÚBLICOS ====================
 
+# Obtiene lista de todos los libros.
+# Soporta paginación y filtrado por categoría.
 @router.get("/", response_model=List[BookResponse])
 async def get_all_books(
     skip: int = Query(0, ge=0, description="Número de registros a saltar"),
     limit: int = Query(100, ge=1, le=100, description="Límite de registros"),
     category: Optional[str] = Query(None, description="Filtrar por categoría")
 ):
-    """
-    Obtiene lista de todos los libros.
-    Soporta paginación y filtrado por categoría.
     
-    Args:
-        skip (int): Offset para paginación
-        limit (int): Límite de resultados
-        category (str, optional): Categoría para filtrar
-        
-    Returns:
-        List[BookResponse]: Lista de libros
-    """
     try:
+        logger.info(f"🛠️ Parámetros recibidos - skip: {skip}, limit: {limit}, category: {category}")
+
+
         if category:
             query = """
                 SELECT id, title, author, isbn, description, category, 
@@ -63,32 +57,31 @@ async def get_all_books(
             params = (limit, skip)
         
         books = execute_query(query, params)
-        
-        logger.info(f"✅ Se obtuvieron {len(books)} libros")
+        logger.info(f"Se obtuvieron {len(books) if books else 0} libros")
+      
+
         return books if books else []
         
-    except Exception as e:
-        logger.error(f"❌ Error al obtener libros: {e}")
-        raise HTTPException(
+    except Error as e:
+        logger.error(f"Error de base de datos al obtener libros: {e}")
+        return create_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al obtener libros"
+            message="Error al obtener libros",
+            detail="Error de base de datos"
+        )
+    except Exception as e:
+        logger.error(f"Error al obtener libros: {e}")
+        return create_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Error al obtener libros",
+            detail=str(e)
         )
 
 
+# Obtiene un libro específico por su ID.
 @router.get("/{book_id}", response_model=BookResponse)
 async def get_book_by_id(book_id: int):
-    """
-    Obtiene un libro específico por su ID.
     
-    Args:
-        book_id (int): ID del libro
-        
-    Returns:
-        BookResponse: Datos del libro
-        
-    Raises:
-        HTTPException 404: Si el libro no existe
-    """
     try:
         book = execute_query(
             """
@@ -101,40 +94,38 @@ async def get_book_by_id(book_id: int):
         )
         
         if not book:
-            logger.warning(f"⚠️ Libro no encontrado: ID {book_id}")
-            raise HTTPException(
+            logger.warning(f"Libro no encontrado: ID {book_id}")
+            return create_response(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Libro con ID {book_id} no encontrado"
+                message=f"Libro con ID {book_id} no encontrado"
             )
         
-        logger.info(f"✅ Libro obtenido: {book[0]['title']}")
+        logger.info(f"Libro obtenido: {book[0]['title']}")
         return book[0]
         
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Error al obtener libro: {e}")
-        raise HTTPException(
+    except Error as e:
+        logger.error(f"Error de base de datos al obtener libro: {e}")
+        return create_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al obtener libro"
+            message="Error al obtener libro",
+            detail="Error de base de datos"
+        )
+    except Exception as e:
+        logger.error(f"Error al obtener libro: {e}")
+        return create_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Error al obtener libro",
+            detail=str(e)
         )
 
 
+# Busca libros por título o autor.
 @router.get("/search/", response_model=List[BookResponse])
 async def search_books(
     q: str = Query(..., min_length=1, description="Término de búsqueda"),
     limit: int = Query(20, ge=1, le=100, description="Límite de resultados")
 ):
-    """
-    Busca libros por título o autor.
     
-    Args:
-        q (str): Término de búsqueda
-        limit (int): Límite de resultados
-        
-    Returns:
-        List[BookResponse]: Lista de libros encontrados
-    """
     try:
         search_term = f"%{q}%"
         books = execute_query(
@@ -147,40 +138,44 @@ async def search_books(
             LIMIT %s
             """,
             (search_term, search_term, limit)
+            
         )
+
+        logger.debug(f"Libros encontrados: {books}")
+
         
-        logger.info(f"✅ Búsqueda '{q}': {len(books)} resultados")
+        
+        logger.info(f"Búsqueda '{q}': {len(books) if books else 0} resultados")
+        
         return books if books else []
         
-    except Exception as e:
-        logger.error(f"❌ Error en búsqueda: {e}")
-        raise HTTPException(
+        
+    except Error as e:
+        logger.error(f"Error de base de datos en búsqueda: {e}")
+        return create_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al buscar libros"
+            message="Error al buscar libros",
+            detail="Error de base de datos"
+        )
+    except Exception as e:
+        logger.error(f"Error en búsqueda: {e}")
+        return create_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Error al buscar libros",
+            detail=str(e)
         )
 
 
 # ==================== ENDPOINTS ADMIN ====================
 
-@router.post("/", response_model=BookResponse, status_code=status.HTTP_201_CREATED)
+# Crea un nuevo libro en el catálogo.
+# Requiere permisos de administrador.
+@router.post("/", response_model=BookResponse)
 async def create_book(
     book: BookCreate,
     current_user: dict = Depends(require_admin)
 ):
-    """
-    Crea un nuevo libro en el catálogo.
-    Requiere permisos de administrador.
     
-    Args:
-        book (BookCreate): Datos del libro a crear
-        current_user (dict): Usuario admin autenticado
-        
-    Returns:
-        BookResponse: Libro creado
-        
-    Raises:
-        HTTPException 400: Si el ISBN ya existe
-    """
     try:
         # Verificar si el ISBN ya existe
         existing_book = execute_query(
@@ -189,10 +184,10 @@ async def create_book(
         )
         
         if existing_book:
-            logger.warning(f"⚠️ Intento de crear libro con ISBN existente: {book.isbn}")
-            raise HTTPException(
+            logger.warning(f"Intento de crear libro con ISBN existente: {book.isbn}")
+            return create_response(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Ya existe un libro con ese ISBN"
+                message="Ya existe un libro con ese ISBN"
             )
         
         # Insertar libro
@@ -221,40 +216,38 @@ async def create_book(
             (book.isbn,)
         )
         
-        logger.info(f"✅ Libro creado por {current_user['username']}: {book.title}")
-        return new_book[0]
+        logger.info(f"Libro creado por {current_user['username']}: {book.title}")
+        return create_response(
+            status_code=status.HTTP_201_CREATED,
+            message="Libro creado exitosamente",
+            data=new_book[0] if new_book else None
+        )
         
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Error al crear libro: {e}")
-        raise HTTPException(
+    except Error as e:
+        logger.error(f"Error de base de datos al crear libro: {e}")
+        return create_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al crear libro"
+            message="Error al crear libro",
+            detail="Error de base de datos"
+        )
+    except Exception as e:
+        logger.error(f"Error al crear libro: {e}")
+        return create_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Error al crear libro",
+            detail=str(e)
         )
 
 
+# Actualiza un libro existente.
+# Requiere permisos de administrador.
 @router.put("/{book_id}", response_model=BookResponse)
 async def update_book(
     book_id: int,
     book_update: BookUpdate,
     current_user: dict = Depends(require_admin)
 ):
-    """
-    Actualiza un libro existente.
-    Requiere permisos de administrador.
     
-    Args:
-        book_id (int): ID del libro a actualizar
-        book_update (BookUpdate): Datos a actualizar
-        current_user (dict): Usuario admin autenticado
-        
-    Returns:
-        BookResponse: Libro actualizado
-        
-    Raises:
-        HTTPException 404: Si el libro no existe
-    """
     try:
         # Verificar que el libro existe
         existing_book = execute_query(
@@ -263,9 +256,10 @@ async def update_book(
         )
         
         if not existing_book:
-            raise HTTPException(
+            logger.warning(f"Intento de actualizar libro inexistente: ID {book_id}")
+            return create_response(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Libro con ID {book_id} no encontrado"
+                message=f"Libro con ID {book_id} no encontrado"
             )
         
         # Construir query de actualización dinámicamente
@@ -295,9 +289,10 @@ async def update_book(
             params.append(book_update.available_copies)
         
         if not update_fields:
-            raise HTTPException(
+            logger.warning(f"Intento de actualizar libro sin campos: ID {book_id}")
+            return create_response(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No se proporcionaron campos para actualizar"
+                message="No se proporcionaron campos para actualizar"
             )
         
         params.append(book_id)
@@ -316,39 +311,37 @@ async def update_book(
             (book_id,)
         )
         
-        logger.info(f"✅ Libro actualizado por {current_user['username']}: ID {book_id}")
-        return updated_book[0]
+        logger.info(f"Libro actualizado por {current_user['username']}: ID {book_id}")
+        return create_response(
+            status_code=status.HTTP_200_OK,
+            message="Libro actualizado exitosamente",
+            data=updated_book[0] if updated_book else None
+        )
         
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Error al actualizar libro: {e}")
-        raise HTTPException(
+    except Error as e:
+        logger.error(f"Error de base de datos al actualizar libro: {e}")
+        return create_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al actualizar libro"
+            message="Error al actualizar libro",
+            detail="Error de base de datos"
+        )
+    except Exception as e:
+        logger.error(f"Error al actualizar libro: {e}")
+        return create_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Error al actualizar libro",
+            detail=str(e)
         )
 
 
+# Elimina un libro del catálogo.
+# Requiere permisos de administrador.
 @router.delete("/{book_id}", response_model=MessageResponse)
 async def delete_book(
     book_id: int,
     current_user: dict = Depends(require_admin)
 ):
-    """
-    Elimina un libro del catálogo.
-    Requiere permisos de administrador.
     
-    Args:
-        book_id (int): ID del libro a eliminar
-        current_user (dict): Usuario admin autenticado
-        
-    Returns:
-        MessageResponse: Mensaje de confirmación
-        
-    Raises:
-        HTTPException 404: Si el libro no existe
-        HTTPException 400: Si el libro tiene préstamos activos
-    """
     try:
         # Verificar que el libro existe
         book = execute_query(
@@ -357,9 +350,10 @@ async def delete_book(
         )
         
         if not book:
-            raise HTTPException(
+            logger.warning(f"Intento de eliminar libro inexistente: ID {book_id}")
+            return create_response(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Libro con ID {book_id} no encontrado"
+                message=f"Libro con ID {book_id} no encontrado"
             )
         
         # Verificar que no tenga préstamos activos
@@ -368,10 +362,11 @@ async def delete_book(
             (book_id,)
         )
         
-        if active_loans[0]["count"] > 0:
-            raise HTTPException(
+        if active_loans and active_loans[0]["count"] > 0:
+            logger.warning(f"Intento de eliminar libro con préstamos activos: ID {book_id}")
+            return create_response(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No se puede eliminar un libro con préstamos activos"
+                message="No se puede eliminar un libro con préstamos activos"
             )
         
         # Eliminar libro
@@ -381,17 +376,24 @@ async def delete_book(
             fetch=False
         )
         
-        logger.info(f"✅ Libro eliminado por {current_user['username']}: {book[0]['title']}")
-        return {
-            "message": "Libro eliminado exitosamente",
-            "detail": f"Se eliminó el libro: {book[0]['title']}"
-        }
+        logger.info(f"Libro eliminado por {current_user['username']}: {book[0]['title']}")
+        return create_response(
+            status_code=status.HTTP_200_OK,
+            message="Libro eliminado exitosamente",
+            detail=f"Se eliminó el libro: {book[0]['title']}"
+        )
         
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Error al eliminar libro: {e}")
-        raise HTTPException(
+    except Error as e:
+        logger.error(f"Error de base de datos al eliminar libro: {e}")
+        return create_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al eliminar libro"
+            message="Error al eliminar libro",
+            detail="Error de base de datos"
+        )
+    except Exception as e:
+        logger.error(f"Error al eliminar libro: {e}")
+        return create_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Error al eliminar libro",
+            detail=str(e)
         )

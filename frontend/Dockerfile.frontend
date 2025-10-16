@@ -1,0 +1,15 @@
+FROM node:20
+
+#directorio
+WORKDIR /app
+
+# Copiar archivos de dependencias
+COPY package*.json ./
+
+#dependencias
+RUN npm install
+# RUN npm ci --only=develompt
+
+COPY . .
+
+CMD ["npm", "start"]

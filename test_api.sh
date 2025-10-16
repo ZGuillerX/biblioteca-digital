@@ -1,5 +1,3 @@
-#!/bin/bash
-
 # Script de Pruebas del API
 # ==========================
 

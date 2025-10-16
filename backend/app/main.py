@@ -1,6 +1,4 @@
 """
-Aplicación Principal FastAPI
-=============================
 Punto de entrada de la aplicación. Configura FastAPI, middlewares y rutas.
 """
 
@@ -44,11 +42,11 @@ from fastapi.openapi.utils import get_openapi
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
+
+# Personaliza la documentación OpenAPI para incluir autenticación Bearer (JWT)
+# y habilitar el botón 'Authorize' en Swagger UI.
 def custom_openapi():
-    """
-    Personaliza la documentación OpenAPI para incluir autenticación Bearer (JWT)
-    y habilitar el botón 'Authorize' en Swagger UI.
-    """
+   
     if app.openapi_schema:
         return app.openapi_schema
 
@@ -76,7 +74,6 @@ def custom_openapi():
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 
-app.openapi = custom_openapi
 
 
 # ==================== MIDDLEWARES ====================
@@ -91,19 +88,11 @@ app.add_middleware(
 )
 
 
+#  Middleware para logging de requests.
+#  Registra método, ruta y tiempo de respuesta.
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """
-    Middleware para logging de requests.
-    Registra método, ruta y tiempo de respuesta.
-    
-    Args:
-        request (Request): Request HTTP entrante
-        call_next: Función para continuar con el request
-        
-    Returns:
-        Response: Respuesta HTTP
-    """
+
     start_time = time.time()
     
     # Procesar request
@@ -124,52 +113,47 @@ async def log_requests(request: Request, call_next):
 
 # ==================== EVENTOS ====================
 
+# Evento que se ejecuta al iniciar la aplicación.
+# Inicializa pool de conexiones y verifica conectividad.
+
 @app.on_event("startup")
 async def startup_event():
-    """
-    Evento que se ejecuta al iniciar la aplicación.
-    Inicializa pool de conexiones y verifica conectividad.
-    """
+  
     logger.info("=" * 50)
-    logger.info(f"🚀 Iniciando {settings.APP_NAME} v{settings.APP_VERSION}")
+    logger.info(f"Iniciando {settings.APP_NAME} v{settings.APP_VERSION}")
     logger.info("=" * 50)
     
     try:
         # Inicializar pool de conexiones
         DatabaseConnection.initialize_pool()
-        logger.info("✅ Pool de conexiones inicializado")
+        logger.info("Pool de conexiones inicializado")
         
         # Probar conexión
         if test_connection():
-            logger.info("✅ Conexión a MySQL exitosa")
+            logger.info("Conexión a MySQL exitosa")
         else:
-            logger.error("❌ Error al conectar con MySQL")
+            logger.error("Error al conectar con MySQL")
             
     except Exception as e:
-        logger.error(f"❌ Error en startup: {e}")
+        logger.error(f"Error en startup: {e}")
         raise
 
 
+# Evento que se ejecuta al cerrar la aplicación.
+# Cierra conexiones y limpia recursos.
 @app.on_event("shutdown")
 async def shutdown_event():
-    """
-    Evento que se ejecuta al cerrar la aplicación.
-    Cierra conexiones y limpia recursos.
-    """
-    logger.info("🛑 Cerrando aplicación...")
-    logger.info("✅ Aplicación cerrada correctamente")
+   
+    logger.info("Cerrando aplicación...")
+    logger.info("Aplicación cerrada correctamente")
 
 
 # ==================== RUTAS PRINCIPALES ====================
 
+# Endpoint raíz de la API.
 @app.get("/", tags=["Root"])
 async def root():
-    """
-    Endpoint raíz de la API.
     
-    Returns:
-        dict: Información básica de la API
-    """
     return {
         "message": f"Bienvenido a {settings.APP_NAME}",
         "version": settings.APP_VERSION,
@@ -177,16 +161,11 @@ async def root():
         "redoc": "/redoc"
     }
 
-
+#  Endpoint de health check.
+#  Verifica que la API y la base de datos estén funcionando.
 @app.get("/health", tags=["Health"])
 async def health_check():
-    """
-    Endpoint de health check.
-    Verifica que la API y la base de datos estén funcionando.
-    
-    Returns:
-        dict: Estado de salud del sistema
-    """
+ 
     db_status = test_connection()
     
     return {
@@ -220,22 +199,17 @@ app.include_router(
 )
 
 
+app.openapi = custom_openapi
+
+
 # ==================== MANEJADOR DE ERRORES GLOBAL ====================
 
+# Manejador global de excepciones.
+# Captura errores no manejados y retorna respuesta JSON.
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """
-    Manejador global de excepciones.
-    Captura errores no manejados y retorna respuesta JSON.
     
-    Args:
-        request (Request): Request que generó el error
-        exc (Exception): Excepción capturada
-        
-    Returns:
-        JSONResponse: Respuesta de error en formato JSON
-    """
-    logger.error(f"❌ Error no manejado: {exc}")
+    logger.error(f"Error no manejado: {exc}")
     
     return JSONResponse(
         status_code=500,

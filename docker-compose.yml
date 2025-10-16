@@ -1,20 +1,15 @@
-version: '3.8'
+
 
 services:
   # Servicio MySQL
-  mysql:
+  biblioteca_mysql:
     image: mysql:8.0
     container_name: biblioteca_mysql
     restart: always
     env_file:
       - .env
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    ports:
-      - "3306:3306"
+    # ports:
+    #   - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -27,9 +22,9 @@ services:
       retries: 5
 
   # Servicio Backend (FastAPI)
-  backend:
+  biblioteca_backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     container_name: biblioteca_backend
     restart: always
@@ -40,27 +35,36 @@ services:
     volumes:
       - ./backend/app:/app
     depends_on:
-      mysql:
+      biblioteca_mysql:
         condition: service_healthy
     networks:
       - biblioteca_network
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
-  # Servicio Frontend (React) - Opcional para después
-  # frontend:
-  #   build:
-  #     context: ./frontend
-  #     dockerfile: Dockerfile
-  #   container_name: biblioteca_frontend
-  #   restart: always
-  #   ports:
-  #     - "3000:3000"
-  #   volumes:
-  #     - ./frontend/src:/app/src
-  #   networks:
-  #     - biblioteca_network
-  #   depends_on:
-  #     - backend
+  biblioteca_frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    container_name: biblioteca_frontend
+    restart: always
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    networks:
+      - biblioteca_network
+    depends_on:
+      - biblioteca_backend
+    env_file:
+      - .env
+      
 
 volumes:
   mysql_data:

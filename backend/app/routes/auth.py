@@ -5,6 +5,7 @@ Endpoints para registro, login y gestión de usuarios.
 """
 
 from fastapi import APIRouter, HTTPException, status, Depends, Header
+from fastapi.responses import JSONResponse
 from typing import Optional
 import logging
 from datetime import timedelta
@@ -13,6 +14,7 @@ from models import UserCreate, UserLogin, UserResponse, Token, MessageResponse
 from security import hash_password, verify_password, create_access_token, decode_access_token
 from database import execute_query
 from mysql.connector import Error
+from utils import create_response
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -22,34 +24,18 @@ router = APIRouter()
 
 
 # ==================== DEPENDENCIAS ====================
-
+# Dependencia para obtener el usuario actual desde el token JWT.
 def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
-    """
-    Dependencia para obtener el usuario actual desde el token JWT.
-    
-    Args:
-        authorization (str): Header de autorización con formato "Bearer <token>"
-        
-    Returns:
-        dict: Datos del usuario actual
-        
-    Raises:
-        HTTPException: Si el token es inválido o no se proporciona
-        
-    Example:
-        @app.get("/protected")
-        def protected_route(current_user: dict = Depends(get_current_user)):
-            return {"user": current_user["username"]}
-    """
-    if not authorization:
-        logger.warning("⚠️ Intento de acceso sin token")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token de autorización no proporcionado",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
     
     try:
+        if not authorization:
+            logger.warning("Intento de acceso sin token")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token de autorización no proporcionado",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+        
         # Extraer token del header "Bearer <token>"
         scheme, token = authorization.split()
         
@@ -77,61 +63,52 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
                 detail="Token inválido"
             )
         
-        logger.debug(f"✅ Usuario autenticado: {username}")
+        logger.debug(f"Usuario autenticado: {username}")
         return {"username": username, "role": role}
         
     except ValueError:
+        logger.error("Formato de token inválido")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Formato de token inválido"
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"❌ Error en autenticación: {e}")
+        logger.error(f"Error en autenticación: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Error de autenticación"
         )
 
-
+# Dependencia que verifica que el usuario actual sea admin.
 def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
-    """
-    Dependencia que verifica que el usuario actual sea admin.
     
-    Args:
-        current_user (dict): Usuario actual obtenido del token
+    try:
+        if current_user.get("role") != "admin":
+            logger.warning(f"Usuario {current_user['username']} intentó acceso admin")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tienes permisos de administrador"
+            )
+        return current_user
         
-    Returns:
-        dict: Datos del usuario admin
-        
-    Raises:
-        HTTPException: Si el usuario no es admin
-    """
-    if current_user.get("role") != "admin":
-        logger.warning(f"⚠️ Usuario {current_user['username']} intentó acceso admin")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error verificando permisos admin: {e}")
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes permisos de administrador"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al verificar permisos"
         )
-    return current_user
 
 
 # ==================== ENDPOINTS ====================
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+# Registra un nuevo usuario en el sistema.
+@router.post("/register", response_model=MessageResponse)
 async def register_user(user: UserCreate):
-    """
-    Registra un nuevo usuario en el sistema.
     
-    Args:
-        user (UserCreate): Datos del usuario a crear
-        
-    Returns:
-        UserResponse: Datos del usuario creado
-        
-    Raises:
-        HTTPException 400: Si el username o email ya existe
-        HTTPException 500: Si hay error en la base de datos
-    """
     try:
         # Verificar si el username ya existe
         existing_user = execute_query(
@@ -140,10 +117,10 @@ async def register_user(user: UserCreate):
         )
         
         if existing_user:
-            logger.warning(f"⚠️ Intento de registro con username/email existente: {user.username}")
-            raise HTTPException(
+            logger.warning(f"Intento de registro con username/email existente: {user.username}")
+            return create_response(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El username o email ya está registrado"
+                message="El username o email ya está registrado"
             )
         
         # Encriptar contraseña
@@ -165,40 +142,33 @@ async def register_user(user: UserCreate):
             (user.username,)
         )
         
-        logger.info(f"✅ Usuario registrado: {user.username}")
-        return new_user[0]
+        logger.info(f"Usuario registrado exitosamente: {user.username}")
+        return create_response(
+            status_code=status.HTTP_201_CREATED,
+            message="Usuario creado correctamente",
+            data=new_user[0] if new_user else None
+        )
         
-    except HTTPException:
-        raise
     except Error as e:
-        logger.error(f"❌ Error de base de datos al registrar usuario: {e}")
-        raise HTTPException(
+        logger.error(f"Error de base de datos al registrar usuario: {e}")
+        return create_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al registrar usuario"
+            message="Error al registrar usuario",
+            detail="Error de base de datos"
         )
     except Exception as e:
-        logger.error(f"❌ Error inesperado al registrar usuario: {e}")
-        raise HTTPException(
+        logger.error(f"Error inesperado al registrar usuario: {e}")
+        return create_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor"
+            message="Error interno del servidor",
+            detail=str(e)
         )
 
 
+# Inicia sesión y genera un token JWT
 @router.post("/login", response_model=Token)
 async def login(credentials: UserLogin):
-    """
-    Inicia sesión y genera un token JWT.
     
-    Args:
-        credentials (UserLogin): Username y contraseña
-        
-    Returns:
-        Token: Token JWT de acceso
-        
-    Raises:
-        HTTPException 401: Si las credenciales son incorrectas
-        HTTPException 403: Si el usuario está inactivo
-    """
     try:
         # Buscar usuario
         user = execute_query(
@@ -207,28 +177,28 @@ async def login(credentials: UserLogin):
         )
         
         if not user:
-            logger.warning(f"⚠️ Intento de login con username inexistente: {credentials.username}")
-            raise HTTPException(
+            logger.warning(f"Intento de login con usuario inexistente: {credentials.username}")
+            return create_response(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Credenciales incorrectas"
+                message="Credenciales incorrectas"
             )
         
         user_data = user[0]
         
         # Verificar que el usuario esté activo
         if not user_data["is_active"]:
-            logger.warning(f"⚠️ Intento de login con usuario inactivo: {credentials.username}")
-            raise HTTPException(
+            logger.warning(f"Intento de login con usuario inactivo: {credentials.username}")
+            return create_response(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Usuario inactivo"
+                message="Usuario inactivo"
             )
         
         # Verificar contraseña
         if not verify_password(credentials.password, user_data["password_hash"]):
-            logger.warning(f"⚠️ Contraseña incorrecta para usuario: {credentials.username}")
-            raise HTTPException(
+            logger.warning(f"Intento de login con contraseña incorrecta: {credentials.username}")
+            return create_response(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Credenciales incorrectas"
+                message="Credenciales incorrectas"
             )
         
         # Crear token JWT
@@ -237,31 +207,37 @@ async def login(credentials: UserLogin):
             expires_delta=timedelta(minutes=30)
         )
         
-        logger.info(f"✅ Login exitoso: {credentials.username}")
-        return {"access_token": access_token, "token_type": "bearer"}
+        logger.info(f"Login exitoso: {credentials.username}")
+        return create_response(
+            status_code=status.HTTP_200_OK,
+            message="Login exitoso",
+            data={
+                "access_token": access_token,
+                "token_type": "bearer"
+            }
+        )
         
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Error en login: {e}")
-        raise HTTPException(
+    except Error as e:
+        logger.error(f"Error de base de datos en login: {e}")
+        return create_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor"
+            message="Error interno del servidor",
+            detail="Error de base de datos"
+        )
+    except Exception as e:
+        logger.error(f"Error en login: {e}")
+        return create_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Error interno del servidor",
+            detail=str(e)
         )
 
 
+# Obtiene información del usuario actual autenticado.
+# Requiere autenticación.
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(current_user: dict = Depends(get_current_user)):
-    """
-    Obtiene información del usuario actual.
-    Requiere autenticación.
     
-    Args:
-        current_user (dict): Usuario obtenido del token (inyectado por dependencia)
-        
-    Returns:
-        UserResponse: Datos del usuario actual
-    """
     try:
         user = execute_query(
             "SELECT id, username, email, full_name, role, is_active, created_at FROM users WHERE username = %s",
@@ -269,18 +245,30 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
         )
         
         if not user:
-            raise HTTPException(
+            logger.error(f"Usuario autenticado no encontrado en BD: {current_user['username']}")
+            return create_response(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Usuario no encontrado"
+                message="Usuario no encontrado"
             )
         
-        return user[0]
+        logger.info(f"Información de usuario obtenida: {current_user['username']}")
+        return create_response(
+            status_code=status.HTTP_200_OK,
+            message="Usuario obtenido correctamente",
+            data=user[0]
+        )
         
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Error al obtener usuario: {e}")
-        raise HTTPException(
+    except Error as e:
+        logger.error(f"Error de base de datos al obtener usuario: {e}")
+        return create_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al obtener información del usuario"
+            message="Error al obtener información del usuario",
+            detail="Error de base de datos"
+        )
+    except Exception as e:
+        logger.error(f"Error al obtener usuario: {e}")
+        return create_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Error al obtener información del usuario",
+            detail=str(e)
         )

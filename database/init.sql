@@ -1,6 +1,8 @@
 CREATE DATABASE IF NOT EXISTS biblioteca_db;
 USE biblioteca_db;
 
+
+
 -- Tabla: users
 -- Almacena información de usuarios del sistema
 CREATE TABLE IF NOT EXISTS users (
@@ -12,7 +14,9 @@ CREATE TABLE IF NOT EXISTS users (
     role ENUM('usuario', 'admin') DEFAULT 'usuario' COMMENT 'Rol del usuario',
     is_active BOOLEAN DEFAULT TRUE COMMENT 'Usuario activo',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Fecha de creación'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+
 
 -- Tabla: books
 -- Almacena el catálogo de libros disponibles
@@ -27,7 +31,9 @@ CREATE TABLE IF NOT EXISTS books (
     total_copies INT NOT NULL DEFAULT 1 COMMENT 'Copias totales',
     available_copies INT NOT NULL DEFAULT 1 COMMENT 'Copias disponibles',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Fecha de registro'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+
 
 -- Tabla: loans
 -- Registra préstamos de libros
@@ -42,7 +48,9 @@ CREATE TABLE IF NOT EXISTS loans (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Fecha de creación',
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+
 
 -- Índices para mejorar rendimiento
 CREATE INDEX idx_user_email ON users(email);
@@ -51,21 +59,79 @@ CREATE INDEX idx_loan_status ON loans(status);
 CREATE INDEX idx_loan_user ON loans(user_id);
 CREATE INDEX idx_loan_book ON loans(book_id);
 
+
+
 -- Datos de prueba: Usuario admin
-INSERT INTO users (username, email, password_hash, full_name, role) VALUES
-('admin', 'admin@biblioteca.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzS6F.hQwu', 'Administrador', 'admin');
+INSERT INTO users (username, email, password_hash, full_name, role)
+VALUES (
+        'admin',
+        'admin@biblioteca.com',
+        '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzS6F.hQwu',
+        'Administrador',
+        'admin'
+    );
+
+
+
 -- Contraseña: admin123
-
 -- Datos de prueba: Libros
-INSERT INTO books (title, author, isbn, description, category, publication_year, total_copies, available_copies) VALUES
-('Cien Años de Soledad', 'Gabriel García Márquez', '978-0060883287', 'Obra maestra del realismo mágico', 'Ficción', 1967, 3, 3),
-('1984', 'George Orwell', '978-0451524935', 'Novela distópica clásica', 'Ficción', 1949, 2, 2),
-('El Principito', 'Antoine de Saint-Exupéry', '978-0156012195', 'Cuento filosófico', 'Infantil', 1943, 5, 5),
-('Don Quijote de la Mancha', 'Miguel de Cervantes', '978-8424926441', 'Clásico de la literatura española', 'Clásico', 1605, 2, 2);
+INSERT INTO books (
+        title,
+        author,
+        isbn,
+        description,
+        category,
+        publication_year,
+        total_copies,
+        available_copies
+    )
+VALUES (
+        'Cien Años de Soledad',
+        'Gabriel García Márquez',
+        '978-0060883287',
+        'Obra maestra del realismo mágico',
+        'Ficción',
+        1967,
+        3,
+        3
+    ),
+    (
+        '1984',
+        'George Orwell',
+        '978-0451524935',
+        'Novela distópica clásica',
+        'Ficción',
+        1949,
+        2,
+        2
+    ),
+    (
+        'El Principito',
+        'Antoine de Saint-Exupéry',
+        '978-0156012195',
+        'Cuento filosófico',
+        'Infantil',
+        1943,
+        5,
+        5
+    ),
+    (
+        'Don Quijote de la Mancha',
+        'Miguel de Cervantes',
+        '978-8424926441',
+        'Clásico de la literatura española',
+        'Clásico',
+        1605,
+        2,
+        2
+    );
 
+
+    
 -- Verificar datos insertados
 SELECT 'Users creados:' as info;
-SELECT * FROM users;
-
+SELECT *
+FROM users;
 SELECT 'Libros creados:' as info;
-SELECT * FROM books;
+SELECT *
+FROM books;

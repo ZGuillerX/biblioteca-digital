@@ -7,28 +7,27 @@ Utiliza pydantic-settings para validar las variables de entorno.
 
 from pydantic_settings import BaseSettings
 from functools import lru_cache
-import os
 
 
 class Settings(BaseSettings):
-    """
-    Clase de configuración que carga variables de entorno.
+    # 
+    # Clase de configuración que carga variables de entorno.
     
-    Atributos:
-        APP_NAME (str): Nombre de la aplicación
-        APP_VERSION (str): Versión de la aplicación
-        DEBUG (bool): Modo debug
+    # Atributos:
+    #     APP_NAME (str): Nombre de la aplicación
+    #     APP_VERSION (str): Versión de la aplicación
+    #     DEBUG (bool): Modo debug
         
-        MYSQL_HOST (str): Host de MySQL
-        MYSQL_PORT (int): Puerto de MySQL
-        MYSQL_USER (str): Usuario de MySQL
-        MYSQL_PASSWORD (str): Contraseña de MySQL
-        MYSQL_DATABASE (str): Nombre de la base de datos
+    #     MYSQL_HOST (str): Host de MySQL
+    #     MYSQL_PORT (int): Puerto de MySQL
+    #     MYSQL_USER (str): Usuario de MySQL
+    #     MYSQL_PASSWORD (str): Contraseña de MySQL
+    #     MYSQL_DATABASE (str): Nombre de la base de datos
         
-        SECRET_KEY (str): Clave secreta para JWT
-        ALGORITHM (str): Algoritmo de encriptación
-        ACCESS_TOKEN_EXPIRE_MINUTES (int): Tiempo de expiración del token
-    """
+    #     SECRET_KEY (str): Clave secreta para JWT
+    #     ALGORITHM (str): Algoritmo de encriptación
+    #     ACCESS_TOKEN_EXPIRE_MINUTES (int): Tiempo de expiración del token
+    # 
     
     # Configuración de la aplicación
     APP_NAME: str = "Biblioteca Digital"
@@ -48,28 +47,20 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
     class Config:
-        """
-        Configuración de pydantic para cargar el archivo .env
-        """
+        
+    # Configuración de pydantic para cargar el archivo .env
         env_file = ".env"
         case_sensitive = True
 
 
 @lru_cache()
+
+# Función que retorna la configuración de la aplicación.
+# Utiliza caché para evitar leer el archivo .env múltiples veces.
 def get_settings() -> Settings:
-    """
-    Función que retorna la configuración de la aplicación.
-    Utiliza caché para evitar leer el archivo .env múltiples veces.
     
-    Returns:
-        Settings: Instancia de configuración con todas las variables
-    
-    Example:
-        >>> from config import get_settings
-        >>> settings = get_settings()
-        >>> print(settings.MYSQL_HOST)
-    """
-    return Settings()
+    # Instancia de configuración con todas las variables
+    return Settings() # type: ignore
 
 
 # Instancia global de configuración
