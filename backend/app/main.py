@@ -10,6 +10,11 @@ import logging
 import time
 from config import settings
 from database import DatabaseConnection, test_connection
+from dotenv import load_dotenv
+import os
+
+
+load_dotenv()
 
 # Importación de rutas
 from routes import auth, books, loans
@@ -78,14 +83,24 @@ def custom_openapi():
 
 # ==================== MIDDLEWARES ====================
 
-# Configurar CORS
+# Configuracion CORS
+
+VITE_API_URL = os.getenv("VITE_API_URL", "http://localhost:5173")
+
+# rígenes permitidos
+ALLOWED_ORIGINS = [
+     VITE_API_URL,
+]
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción especificar dominios permitidos
+    allow_origins=ALLOWED_ORIGINS,  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 
 #  Middleware para logging de requests.

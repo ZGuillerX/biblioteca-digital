@@ -72,7 +72,7 @@ const bookService = {
    */
   create: async (bookData) => {
     try {
-      const response = await apiClient.post("/api/books", bookData);
+      const response = await apiClient.post("/api/books/", bookData);
       return response.data;
     } catch (error) {
       console.error("Error al crear libro:", error);

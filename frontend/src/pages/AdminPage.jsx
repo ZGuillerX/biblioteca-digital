@@ -1,32 +1,47 @@
-//  Panel de administracion con estadísticas y gestión
-
-import { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, Table, Alert, Spinner, Button, Modal, Form } from 'react-bootstrap';
-import bookService from '../services/bookService';
-import loanService from '../services/loanService';
+// Panel de administración con estadísticas y gestión
+import { useState, useEffect } from "react";
+import {
+  Container,
+  Row,
+  Col,
+  Card,
+  Table,
+  Alert,
+  Spinner,
+  Button,
+  Tabs,
+  Tab,
+  Modal,
+  Form,
+} from "react-bootstrap";
+import bookService from "../services/bookService";
+import loanService from "../services/loanService";
+import BulkUploadPage from "../components/Books/BulkUploadPage";
+import GoogleBooksSearch from "../components/Books/GoogleBooksSearch";
 
 const AdminPage = () => {
   const [stats, setStats] = useState({
     totalBooks: 0,
     totalLoans: 0,
     activeLoans: 0,
-    overdueLoans: 0
+    overdueLoans: 0,
   });
+  const [books, setBooks] = useState([]);
   const [loans, setLoans] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  
+  const [error, setError] = useState("");
+
   // Modal para crear libro
   const [showModal, setShowModal] = useState(false);
   const [newBook, setNewBook] = useState({
-    title: '',
-    author: '',
-    isbn: '',
-    description: '',
-    category: '',
-    publication_year: '',
+    title: "",
+    author: "",
+    isbn: "",
+    description: "",
+    category: "",
+    publication_year: "",
     total_copies: 1,
-    available_copies: 1
+    available_copies: 1,
   });
 
   useEffect(() => {
@@ -36,30 +51,27 @@ const AdminPage = () => {
   const loadAdminData = async () => {
     try {
       setLoading(true);
-      setError('');
-      
-      // Cargar libros
+      setError("");
+
       const booksData = await bookService.getAll();
-      
-      // Cargar préstamos
       const loansData = await loanService.getAll();
-      
-      // Calcular estadísticas
-      const activeLoans = loansData.filter(l => l.status === 'activo').length;
-      const overdueLoans = loansData.filter(l => l.status === 'vencido').length;
-      
+
+      const activeLoans = loansData.filter((l) => l.status === "activo").length;
+      const overdueLoans = loansData.filter(
+        (l) => l.status === "vencido"
+      ).length;
+
       setStats({
         totalBooks: booksData.length,
         totalLoans: loansData.length,
         activeLoans,
-        overdueLoans
+        overdueLoans,
       });
-      
-      // Mostrar solo los últimos 10 préstamos
+
+      setBooks(booksData);
       setLoans(loansData.slice(0, 10));
-      
     } catch (err) {
-      setError('Error al cargar datos de administración');
+      setError("Error al cargar datos de administración");
       console.error(err);
     } finally {
       setLoading(false);
@@ -68,31 +80,34 @@ const AdminPage = () => {
 
   const handleCreateBook = async (e) => {
     e.preventDefault();
-    
+    console.log("🚀 handleCreateBook iniciado");
+    console.log("📦 Datos del nuevo libro:", newBook);
+
     try {
-      setError('');
-      await bookService.create(newBook);
+      setError("");
+
+      const createdBook = await bookService.create(newBook);
+
+      console.log("✅ Libro creado correctamente:", createdBook);
+
       setShowModal(false);
-      
-      // Limpiar formulario
       setNewBook({
-        title: '',
-        author: '',
-        isbn: '',
-        description: '',
-        category: '',
-        publication_year: '',
+        title: "",
+        author: "",
+        isbn: "",
+        description: "",
+        category: "",
+        publication_year: "",
         total_copies: 1,
-        available_copies: 1
+        available_copies: 1,
       });
-      
-      // Recargar datos
-      await loadAdminData();
-      
-      alert('Libro creado exitosamente');
+
+      setBooks((prevBooks) => [createdBook, ...prevBooks]);
+
+      alert("Libro creado exitosamente");
     } catch (err) {
-      setError(err.detail || 'Error al crear libro');
-      console.error(err);
+      console.error("Error en handleCreateBook:", err);
+      setError(err.detail || "Error al crear libro");
     }
   };
 
@@ -100,16 +115,16 @@ const AdminPage = () => {
     const { name, value } = e.target;
     setNewBook({
       ...newBook,
-      [name]: value
+      [name]: value,
     });
   };
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('es-ES', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
+    return date.toLocaleDateString("es-ES", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
     });
   };
 
@@ -124,104 +139,175 @@ const AdminPage = () => {
 
   return (
     <Container className="mt-4">
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2>🔧 Panel de Administración</h2>
-        <Button variant="primary" onClick={() => setShowModal(true)}>
-          + Agregar Libro
-        </Button>
-      </div>
-      
-      {error && <Alert variant="danger" dismissible onClose={() => setError('')}>{error}</Alert>}
-      
-      {/* Tarjetas de estadísticas */}
-      <Row className="mb-4">
-        <Col md={3}>
-          <Card className="text-center bg-primary text-white">
-            <Card.Body>
-              <h3>{stats.totalBooks}</h3>
-              <p className="mb-0">Libros en Catálogo</p>
-            </Card.Body>
-          </Card>
-        </Col>
-        
-        <Col md={3}>
-          <Card className="text-center bg-info text-white">
-            <Card.Body>
-              <h3>{stats.totalLoans}</h3>
-              <p className="mb-0">Préstamos Totales</p>
-            </Card.Body>
-          </Card>
-        </Col>
-        
-        <Col md={3}>
-          <Card className="text-center bg-success text-white">
-            <Card.Body>
-              <h3>{stats.activeLoans}</h3>
-              <p className="mb-0">Préstamos Activos</p>
-            </Card.Body>
-          </Card>
-        </Col>
-        
-        <Col md={3}>
-          <Card className="text-center bg-danger text-white">
-            <Card.Body>
-              <h3>{stats.overdueLoans}</h3>
-              <p className="mb-0">Préstamos Vencidos</p>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
+      <h2 className="mb-4">Panel de Administración</h2>
 
-      {/* Tabla de préstamos recientes */}
-      <Card>
-        <Card.Header>
-          <h5 className="mb-0">Préstamos Recientes</h5>
-        </Card.Header>
-        <Card.Body>
-          {loans.length === 0 ? (
-            <Alert variant="info">No hay préstamos registrados</Alert>
+      {error && (
+        <Alert variant="danger" dismissible onClose={() => setError("")}>
+          {error}
+        </Alert>
+      )}
+
+      <Tabs defaultActiveKey="dashboard" id="admin-tabs" className="mb-4">
+        {/* --- DASHBOARD --- */}
+        <Tab eventKey="dashboard" title="Estadísticas">
+          <Row className="mb-4">
+            <Col md={3}>
+              <Card className="text-center bg-primary text-white">
+                <Card.Body>
+                  <h3>{stats.totalBooks}</h3>
+                  <p className="mb-0">Libros en Catálogo</p>
+                </Card.Body>
+              </Card>
+            </Col>
+            <Col md={3}>
+              <Card className="text-center bg-info text-white">
+                <Card.Body>
+                  <h3>{stats.totalLoans}</h3>
+                  <p className="mb-0">Préstamos Totales</p>
+                </Card.Body>
+              </Card>
+            </Col>
+            <Col md={3}>
+              <Card className="text-center bg-success text-white">
+                <Card.Body>
+                  <h3>{stats.activeLoans}</h3>
+                  <p className="mb-0">Préstamos Activos</p>
+                </Card.Body>
+              </Card>
+            </Col>
+            <Col md={3}>
+              <Card className="text-center bg-danger text-white">
+                <Card.Body>
+                  <h3>{stats.overdueLoans}</h3>
+                  <p className="mb-0">Préstamos Vencidos</p>
+                </Card.Body>
+              </Card>
+            </Col>
+          </Row>
+
+          <Card>
+            <Card.Header>
+              <h5 className="mb-0">Préstamos Recientes</h5>
+            </Card.Header>
+            <Card.Body>
+              {loans.length === 0 ? (
+                <Alert variant="info">No hay préstamos registrados</Alert>
+              ) : (
+                <Table striped bordered hover responsive>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Usuario</th>
+                      <th>Libro</th>
+                      <th>Fecha Préstamo</th>
+                      <th>Fecha Vencimiento</th>
+                      <th>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loans.map((loan) => (
+                      <tr key={loan.id}>
+                        <td>{loan.id}</td>
+                        <td>{loan.user_username}</td>
+                        <td>{loan.book_title}</td>
+                        <td>{formatDate(loan.loan_date)}</td>
+                        <td>{formatDate(loan.due_date)}</td>
+                        <td>
+                          <span
+                            className={`badge bg-${
+                              loan.status === "activo"
+                                ? "primary"
+                                : loan.status === "devuelto"
+                                ? "success"
+                                : "danger"
+                            }`}
+                          >
+                            {loan.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              )}
+            </Card.Body>
+          </Card>
+        </Tab>
+
+        {/* --- GESTIÓN DE LIBROS --- */}
+        <Tab eventKey="books" title="Libros">
+          <div className="d-flex justify-content-end mb-3">
+            <Button variant="primary" onClick={() => setShowModal(true)}>
+              + Agregar Libro
+            </Button>
+          </div>
+
+          {books.length === 0 ? (
+            <Alert variant="info">No hay libros en el catálogo</Alert>
           ) : (
             <Table striped bordered hover responsive>
               <thead>
                 <tr>
-                  <th>ID</th>
-                  <th>Usuario</th>
-                  <th>Libro</th>
-                  <th>Fecha Préstamo</th>
-                  <th>Fecha Vencimiento</th>
-                  <th>Estado</th>
+                  <th>Portada</th>
+                  <th>Título</th>
+                  <th>Autor</th>
+                  <th>ISBN</th>
+                  <th>Categoría</th>
+                  <th>Año</th>
+                  <th>Copias</th>
                 </tr>
               </thead>
               <tbody>
-                {loans.map((loan) => (
-                  <tr key={loan.id}>
-                    <td>{loan.id}</td>
-                    <td>{loan.user_username}</td>
-                    <td>{loan.book_title}</td>
-                    <td>{formatDate(loan.loan_date)}</td>
-                    <td>{formatDate(loan.due_date)}</td>
+                {books.map((book) => (
+                  <tr key={book.id}>
+                    <td className="text-center">
+                      {book.cover_url ? (
+                        <img
+                          src={book.cover_url}
+                          alt={book.title}
+                          style={{
+                            width: "50px",
+                            height: "70px",
+                            objectFit: "cover",
+                            borderRadius: "4px",
+                          }}
+                        />
+                      ) : (
+                        <span className="text-muted">Sin imagen</span>
+                      )}
+                    </td>
+                    <td>{book.title}</td>
+                    <td>{book.author}</td>
+                    <td>{book.isbn}</td>
+                    <td>{book.category || "-"}</td>
+                    <td>{book.publication_year || "-"}</td>
                     <td>
-                      <span className={`badge bg-${
-                        loan.status === 'activo' ? 'primary' :
-                        loan.status === 'devuelto' ? 'success' : 'danger'
-                      }`}>
-                        {loan.status}
-                      </span>
+                      {book.available_copies}/{book.total_copies}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </Table>
           )}
-        </Card.Body>
-      </Card>
+        </Tab>
 
-      {/* Modal para crear libro */}
+        {/* --- CARGA MASIVA --- */}
+        <Tab eventKey="bulk" title="Carga Masiva">
+          <BulkUploadPage />
+        </Tab>
+
+        {/* --- GOOGLE BOOKS --- */}
+        <Tab eventKey="google" title="Google Books">
+          <GoogleBooksSearch />
+        </Tab>
+      </Tabs>
+
+      {/* MODAL DE CREACIÓN DE LIBRO */}
       <Modal show={showModal} onHide={() => setShowModal(false)} size="lg">
         <Modal.Header closeButton>
           <Modal.Title>Agregar Nuevo Libro</Modal.Title>
         </Modal.Header>
-        
+
         <Form onSubmit={handleCreateBook}>
           <Modal.Body>
             <Row>
@@ -237,7 +323,7 @@ const AdminPage = () => {
                   />
                 </Form.Group>
               </Col>
-              
+
               <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label>Autor *</Form.Label>
@@ -265,7 +351,7 @@ const AdminPage = () => {
                   />
                 </Form.Group>
               </Col>
-              
+
               <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label>Categoría</Form.Label>
@@ -304,7 +390,7 @@ const AdminPage = () => {
                   />
                 </Form.Group>
               </Col>
-              
+
               <Col md={4}>
                 <Form.Group className="mb-3">
                   <Form.Label>Total Copias *</Form.Label>
@@ -318,7 +404,7 @@ const AdminPage = () => {
                   />
                 </Form.Group>
               </Col>
-              
+
               <Col md={4}>
                 <Form.Group className="mb-3">
                   <Form.Label>Copias Disponibles *</Form.Label>
@@ -334,7 +420,7 @@ const AdminPage = () => {
               </Col>
             </Row>
           </Modal.Body>
-          
+
           <Modal.Footer>
             <Button variant="secondary" onClick={() => setShowModal(false)}>
               Cancelar

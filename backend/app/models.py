@@ -99,15 +99,38 @@ class BookBase(BaseModel):
     description: Optional[str] = Field(None, description="Descripción del libro")
     category: Optional[str] = Field(None, max_length=100, description="Categoría")
     publication_year: Optional[int] = Field(None, ge=1000, le=2100, description="Año de publicación")
+    cover_url: Optional[str] = Field(None, description="URL de la portada")
     
     # Valida formato básico de ISBN (solo números y guiones)
     @validator('isbn')
     def validate_isbn(cls, v):
+        isbn_clean = v.replace('-', '').replace(' ', '').upper()
+
+        # Verifica longitud
+        if len(isbn_clean) == 10:
+            # ISBN-10: puede terminar en X
+            if not re.match(r'^\d{9}[\dX]$', isbn_clean):
+                raise ValueError('ISBN-10 debe tener 9 dígitos y un dígito o X final')
+            
+            # Validar checksum ISBN-10
+            total = sum((10 - i) * (10 if x == 'X' else int(x)) for i, x in enumerate(isbn_clean))
+            if total % 11 != 0:
+                raise ValueError('ISBN-10 inválido (checksum incorrecto)')
         
-        isbn_clean = v.replace('-', '').replace(' ', '')
-        if not isbn_clean.isdigit() or len(isbn_clean) not in [10, 13]:
-            raise ValueError('ISBN debe tener 10 o 13 dígitos')
-        return v
+        elif len(isbn_clean) == 13:
+            if not isbn_clean.isdigit():
+                raise ValueError('ISBN-13 debe contener solo dígitos')
+            
+            # Validar checksum ISBN-13
+            total = sum((int(x) * (1 if i % 2 == 0 else 3)) for i, x in enumerate(isbn_clean[:-1]))
+            check_digit = (10 - (total % 10)) % 10
+            if check_digit != int(isbn_clean[-1]):
+                raise ValueError('ISBN-13 inválido (checksum incorrecto)')
+        
+        else:
+            raise ValueError('ISBN debe tener 10 o 13 caracteres válidos')
+        
+        return isbn_clean
 
 
 

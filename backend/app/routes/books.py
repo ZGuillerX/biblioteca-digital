@@ -4,9 +4,14 @@ Rutas de Libros
 Endpoints para gestión del catálogo de libros.
 """
 
-from fastapi import APIRouter,status, Depends, Query
+from fastapi import APIRouter,status,UploadFile,HTTPException, Depends, Query,File
+from services.google_books_service import search_book_by_isbn
 from typing import List, Optional
+from io import BytesIO
+import pandas as pd
 import logging
+import asyncio
+
 
 from models import BookCreate, BookUpdate, BookResponse, MessageResponse
 from database import execute_query
@@ -33,7 +38,7 @@ async def get_all_books(
 ):
     
     try:
-        logger.info(f"🛠️ Parámetros recibidos - skip: {skip}, limit: {limit}, category: {category}")
+        logger.info(f"Parámetros recibidos - skip: {skip}, limit: {limit}, category: {category}")
 
 
         if category:
@@ -397,3 +402,316 @@ async def delete_book(
             message="Error al eliminar libro",
             detail=str(e)
         )
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ==================== CARGA MASIVA ====================
+
+MAX_FILE_SIZE = 1024 * 10 # 1 KB
+TIMEOUT_SECONDS = 10 
+
+
+# Carga masiva de libros desde archivo Excel
+# Requiere permisos de administrador
+@router.post("/bulk-upload", status_code=status.HTTP_201_CREATED)
+async def bulk_upload_books(
+    file: UploadFile = File(...),
+    enrich_with_google: bool = False,
+    current_user: dict = Depends(require_admin)
+):
+    try:
+        # formato del archivo ---
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            logger.warning(f"Intento de subir archivo no-Excel: {file.filename}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El archivo debe ser formato Excel (.xlsx o .xls)"
+            )
+
+        # tamaño máximo 
+        contents = await file.read()
+        if len(contents) > MAX_FILE_SIZE:
+            logger.warning(f"Archivo demasiado grande: {len(contents)} bytes")
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"El archivo excede el tamaño máximo permitido (1 KB)"
+            )
+
+        # límite de tiempo para procesamiento
+        async def process_file():
+            try:
+                df = pd.read_excel(BytesIO(contents))
+            except Exception as e:
+                logger.error(f"Error leyendo Excel: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Error al leer archivo Excel: {str(e)}"
+                )
+
+            # Columnas requeridas
+            required_columns = ['title', 'author', 'isbn']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Columnas requeridas faltantes: {', '.join(missing_columns)}"
+                )
+
+            # --- Validar ISBN-13 ---
+            def is_valid_isbn13(isbn: str) -> bool:
+                isbn = isbn.replace("-", "").strip()
+                if not isbn.isdigit() or len(isbn) != 13:
+                    return False
+                total = sum((int(num) if i % 2 == 0 else int(num) * 3) for i, num in enumerate(isbn[:-1]))
+                check = (10 - (total % 10)) % 10
+                return check == int(isbn[-1])
+
+            results = {'success': [], 'errors': [], 'skipped': [], 'enriched': []}
+
+            for index, row in df.iterrows():
+                try:
+                    title = str(row.get('title', '')).strip()
+                    author = str(row.get('author', '')).strip()
+                    isbn = str(row.get('isbn', '')).strip()
+
+                    if not title or not author or not isbn:
+                        results['skipped'].append({
+                            'row': index + 2,
+                            'reason': 'Datos incompletos (título, autor o ISBN faltante)'
+                        })
+                        continue
+
+                    if not is_valid_isbn13(isbn):
+                        results['skipped'].append({
+                            'row': index + 2,
+                            'isbn': isbn,
+                            'reason': 'ISBN-13 inválido'
+                        })
+                        continue
+
+                    existing = execute_query("SELECT id FROM books WHERE isbn = %s", (isbn,))
+                    if existing:
+                        results['skipped'].append({
+                            'row': index + 2,
+                            'isbn': isbn,
+                            'reason': 'ISBN ya existente'
+                        })
+                        continue
+
+                    book_data = {
+                        'title': title,
+                        'author': author,
+                        'isbn': isbn,
+                        'description': str(row.get('description', '')).strip() if pd.notna(row.get('description')) else None,
+                        'category': str(row.get('category', '')).strip() if pd.notna(row.get('category')) else None,
+                        'publication_year': int(row['publication_year']) if pd.notna(row.get('publication_year')) else None,
+                        'total_copies': int(row.get('total_copies', 1)),
+                        'available_copies': int(row.get('available_copies', row.get('total_copies', 1))),
+                        'cover_url': str(row.get('cover_url', '')).strip() if pd.notna(row.get('cover_url')) else None
+                    }
+
+                    # --- Enriquecer con Google Books---
+                    if enrich_with_google:
+                        google_data = search_book_by_isbn(isbn)
+                        if google_data:
+                            for key in ['description', 'category', 'publication_year', 'cover_url']:
+                                if not book_data.get(key) and google_data.get(key):
+                                    book_data[key] = google_data[key]
+                            results['enriched'].append({'row': index + 2, 'isbn': isbn, 'title': title})
+
+                    execute_query(
+                        """
+                        INSERT INTO books (title, author, isbn, description, category,
+                                           publication_year, total_copies, available_copies, cover_url)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            book_data['title'], book_data['author'], book_data['isbn'],
+                            book_data['description'], book_data['category'], book_data['publication_year'],
+                            book_data['total_copies'], book_data['available_copies'], book_data['cover_url']
+                        ),
+                        fetch=False
+                    )
+
+                    results['success'].append({'row': index + 2, 'isbn': isbn, 'title': title})
+
+                except Exception as e:
+                    logger.error(f"Error procesando fila {index + 2}: {e}")
+                    results['errors'].append({
+                        'row': index + 2,
+                        'isbn': isbn if 'isbn' in locals() else 'N/A',
+                        'error': str(e)
+                    })
+
+            summary = {
+                'total_rows': len(df),
+                'successful': len(results['success']),
+                'errors': len(results['errors']),
+                'skipped': len(results['skipped']),
+                'enriched': len(results['enriched'])
+            }
+
+            logger.info(f"Carga masiva completada por {current_user['username']}: {summary}")
+
+            return {
+                'message': 'Carga masiva completada',
+                'summary': summary,
+                'details': results
+            }
+
+        # Ejecutar con límite de tiempo
+        try:
+            return await asyncio.wait_for(process_file(), timeout=TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            logger.error("Tiempo de procesamiento excedido")
+            raise HTTPException(
+                status_code=status.HTTP_408_REQUEST_TIMEOUT,
+                detail=f"El procesamiento excedió el límite de tiempo de {TIMEOUT_SECONDS} segundos"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error en carga masiva: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error en carga masiva: {str(e)}"
+        )
+
+# Busca libros en Google Books API
+@router.get("/google-books/search")
+async def search_google_books(
+    q: str = Query(..., min_length=3, description="Término de búsqueda"),
+    max_results: int = Query(10, ge=1, le=40, description="Máximo de resultados")
+):
+    
+    try:
+        from services.google_books_service import search_books
+        
+        results = search_books(q, max_results)
+        
+        logger.info(f"Búsqueda en Google Books: '{q}' - {len(results)} resultados")
+        
+        return {
+            'query': q,
+            'total': len(results),
+            'books': results
+        }
+        
+    except Exception as e:
+        logger.error(f"Error buscando en Google Books: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al buscar en Google Books"
+        )
+
+
+# Enriquece un libro existente con datos de Google Books
+@router.put("/{book_id}/enrich", response_model=BookResponse)
+async def enrich_book_from_google(
+    book_id: int,
+    current_user: dict = Depends(require_admin)
+):
+    
+    try:
+        # Obtener libro actual
+        book = execute_query(
+            "SELECT * FROM books WHERE id = %s",
+            (book_id,)
+        )
+        
+        if not book:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Libro con ID {book_id} no encontrado"
+            )
+        
+        book_data = book[0]
+        
+        # Buscar en Google Books
+        google_data = search_book_by_isbn(book_data['isbn'])
+        
+        if not google_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No se encontró información en Google Books para este ISBN"
+            )
+        
+        # Actualizar campos vacíos o mejorar existentes
+        update_fields = []
+        params = []
+        
+        if google_data.get('description') and not book_data.get('description'):
+            update_fields.append("description = %s")
+            params.append(google_data['description'])
+        
+        if google_data.get('category') and not book_data.get('category'):
+            update_fields.append("category = %s")
+            params.append(google_data['category'])
+        
+        if google_data.get('cover_url'):
+            update_fields.append("cover_url = %s")
+            params.append(google_data['cover_url'])
+        
+        if not update_fields:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No hay campos para actualizar"
+            )
+        
+        params.append(book_id)
+        query = f"UPDATE books SET {', '.join(update_fields)} WHERE id = %s"
+        
+        execute_query(query, tuple(params), fetch=False)
+        
+        # Obtener libro actualizado
+        updated_book = execute_query(
+            """
+            SELECT id, title, author, isbn, description, category, 
+                   publication_year, total_copies, available_copies, created_at
+            FROM books 
+            WHERE id = %s
+            """,
+            (book_id,)
+        )
+        
+        logger.info(f" Libro enriquecido por {current_user['username']}: {book_data['title']}")
+        
+        return updated_book[0]
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error enriqueciendo libro: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al enriquecer libro"
+        )
+
+    

@@ -12,7 +12,7 @@ def default_serializer(obj):
     raise TypeError(f"Type {type(obj)} not serializable")
 
 
-# Crea una respuesta JSON uniforme para todos los endpoints.
+# respuesta JSON uniforme para todos los endpoints.
 def create_response(
     status_code: int,
     message: str,
